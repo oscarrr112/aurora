@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>极光预报</title>
+  <meta name="description" content="免费的极光预报：今晚评分、附近观测点、极光概率图和太阳风">
+  <meta name="theme-color" content="#050816">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="极光">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body data-tab="tonight">
+  <header class="topbar">
+    <h1 id="title">极光预报</h1>
+    <button id="refresh" class="icon-button" data-action="refresh" aria-label="刷新">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+    </button>
+  </header>
+
+  <main id="view"></main>
+
+  <section id="map-screen" hidden>
+    <div id="map"></div>
+    <div id="legend" class="legend-panel"></div>
+  </section>
+
+  <nav class="tabbar">
+    <button data-action="tab:tonight"><span class="tab-icon">🌙</span>今晚</button>
+    <button data-action="tab:spots"><span class="tab-icon">🔭</span>去哪看</button>
+    <button data-action="tab:map"><span class="tab-icon">🗺️</span>地图</button>
+    <button data-action="tab:wind"><span class="tab-icon">🌬️</span>太阳风</button>
+    <button data-action="tab:settings"><span class="tab-icon">⚙️</span>设置</button>
+  </nav>
+
+  <div id="sheet" hidden></div>
+
+  <noscript>需要开启 JavaScript 才能使用。</noscript>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
