@@ -41,12 +41,28 @@ struct SolarWindSample: Identifiable {
 }
 
 struct CloudForecast {
+    /// 某个天气模型这一小时的云量
+    struct ModelCloud {
+        let id: String
+        let label: String
+        let total: Double
+        let low: Double
+        let mid: Double
+        let high: Double
+        /// 有效云量（高云打折）
+        let effective: Double
+    }
+
+    /// 一小时的云量：几个模型的平均
     struct Hour {
         let time: Date
         let total: Double
         let low: Double
         let mid: Double
         let high: Double
+        /// 有效云量 %：评分用这个
+        let effective: Double
+        let models: [ModelCloud]
     }
 
     let timeZone: TimeZone

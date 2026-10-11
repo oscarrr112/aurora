@@ -34,6 +34,13 @@ export const auroraChance = (kp, kpHorizon) => Math.min(Math.max(0.5 + (kp - kpH
 /** 太阳高度 −6°（民用晨昏）以上算 0，−15° 以下算完全黑 */
 export const darkness = (sunAlt) => Math.min(Math.max((-6 - sunAlt) / 9, 0), 1);
 
+/** 光害系数随极光强度放宽：Kp 刚到本地门槛时按原值扣，超过 3 级以上扣分减半（亮的极光不怕城里的灯） */
+export function lightFactor(skyFactor, kp, kpHorizon) {
+  if (kp == null) return skyFactor;
+  const strength = Math.min(Math.max((kp - kpHorizon) / 3, 0), 1);
+  return 1 - (1 - skyFactor) * (1 - 0.5 * strength);
+}
+
 /** 满月高挂时最多扣 40% */
 export const moonFactor = (alt, illumination) => (alt <= 0 ? 1 : 1 - 0.4 * illumination * Math.min(alt / 30, 1));
 
@@ -45,7 +52,8 @@ export function outlook(lat, lon, kp, clouds, skyFactor = 1, now = Date.now()) {
   for (let i = 0; i < 40; i++) {
     const time = startHour + i * 3600000;
     const mid = time + 1800000;
-    const dark = darkness(sunAltitude(mid, lat, lon));
+    const sunAlt = sunAltitude(mid, lat, lon);
+    const dark = darkness(sunAlt);
     if (dark <= 0) {
       if (result.length === 0) continue;
       break;
@@ -55,11 +63,15 @@ export function outlook(lat, lon, kp, clouds, skyFactor = 1, now = Date.now()) {
     const kpValue = kpAt(mid, kp)?.kp ?? null;
     const moonAlt = moonAltitude(mid, lat, lon);
     const illumination = moonIllumination(mid);
-    const cloud = cloudNear(clouds, mid)?.total ?? null;
+    // 有效云量（几个模型平均、高云打折），cloudDetail 留着给评分拆解看分层和各模型
+    const cloudDetail = cloudNear(clouds, mid);
+    const cloud = cloudDetail?.effective ?? null;
     const aurora = kpValue == null ? 0 : auroraChance(kpValue, kpHorizon);
-    const score = 100 * aurora * dark * (1 - (cloud ?? 0) / 100) * moonFactor(moonAlt, illumination) * skyFactor;
-    result.push({ time, kp: kpValue, auroraChance: aurora, darkness: dark, cloud, moonAltitude: moonAlt,
-      moonIllumination: illumination, skyFactor, score });
+    const moon = moonFactor(moonAlt, illumination);
+    const light = lightFactor(skyFactor, kpValue, kpHorizon);
+    const score = 100 * aurora * dark * (1 - (cloud ?? 0) / 100) * moon * light;
+    result.push({ time, kp: kpValue, kpHorizon, auroraChance: aurora, sunAltitude: sunAlt, darkness: dark, cloud, cloudDetail,
+      moonAltitude: moonAlt, moonIllumination: illumination, moon, skyFactor, light, score });
   }
   return result;
 }

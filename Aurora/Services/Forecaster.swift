@@ -6,14 +6,23 @@ struct HourOutlook: Identifiable {
     let kp: Double?
     /// 按 Kp 估算的「地平线上能看到」的可能性 0...1
     let auroraChance: Double
+    /// 本地地平线可见需要的 Kp
+    let kpHorizon: Double
+    let sunAltitude: Double
     /// 天黑程度 0...1
     let darkness: Double
-    /// 总云量 %，没有数据时为 nil
+    /// 有效云量 %（几个模型平均、高云打折），没有数据时为 nil
     let cloud: Double?
+    /// 分层和各模型的云量，评分拆解用
+    let cloudDetail: CloudForecast.Hour?
     let moonAltitude: Double
     let moonIllumination: Double
-    /// 光害系数（1 = 没有光害）
+    /// 月光系数 0...1
+    let moon: Double
+    /// 地点本身的光害系数（1 = 没有光害）
     let skyFactor: Double
+    /// 按极光强度放宽后的光害系数，评分用这个
+    let light: Double
     /// 综合评分 0...100
     let score: Double
 
@@ -63,6 +72,13 @@ enum Forecaster {
         min(max((-6 - sunAltitude) / 9, 0), 1)
     }
 
+    /// 光害系数随极光强度放宽：Kp 刚到本地门槛时按原值扣，超过 3 级以上扣分减半（亮的极光不怕城里的灯）
+    static func lightFactor(skyFactor: Double, kp: Double?, kpHorizon: Double) -> Double {
+        guard let kp else { return skyFactor }
+        let strength = min(max((kp - kpHorizon) / 3, 0), 1)
+        return 1 - (1 - skyFactor) * (1 - 0.5 * strength)
+    }
+
     /// 满月高挂时最多扣 40%
     static func moonFactor(altitude: Double, illumination: Double) -> Double {
         guard altitude > 0 else { return 1 }
@@ -83,7 +99,8 @@ enum Forecaster {
         for i in 0..<40 {
             let time = Date(timeIntervalSince1970: startHour + Double(i) * 3600)
             let mid = time + 1800
-            let dark = darkness(sunAltitude: Astro.sunAltitude(at: mid, latitude: latitude, longitude: longitude))
+            let sunAlt = Astro.sunAltitude(at: mid, latitude: latitude, longitude: longitude)
+            let dark = darkness(sunAltitude: sunAlt)
             if dark <= 0 {
                 if result.isEmpty { continue } else { break }
             }
@@ -92,16 +109,17 @@ enum Forecaster {
             let kp = kp(at: mid, in: points)?.kp
             let moonAlt = Astro.moonAltitude(at: mid, latitude: latitude, longitude: longitude)
             let illumination = Astro.moonIllumination(at: mid)
-            let cloud = clouds?.hour(near: mid)?.total
+            let cloudDetail = clouds?.hour(near: mid)
+            let cloud = cloudDetail?.effective
             let aurora = kp.map { auroraChance(kp: $0, kpHorizon: kpHorizon) } ?? 0
-            let score = 100 * aurora * dark
-                * (1 - (cloud ?? 0) / 100)
-                * moonFactor(altitude: moonAlt, illumination: illumination)
-                * skyFactor
+            let moon = moonFactor(altitude: moonAlt, illumination: illumination)
+            let light = lightFactor(skyFactor: skyFactor, kp: kp, kpHorizon: kpHorizon)
+            let score = 100 * aurora * dark * (1 - (cloud ?? 0) / 100) * moon * light
 
-            result.append(HourOutlook(time: time, kp: kp, auroraChance: aurora, darkness: dark, cloud: cloud,
-                                      moonAltitude: moonAlt, moonIllumination: illumination,
-                                      skyFactor: skyFactor, score: score))
+            result.append(HourOutlook(time: time, kp: kp, auroraChance: aurora, kpHorizon: kpHorizon,
+                                      sunAltitude: sunAlt, darkness: dark, cloud: cloud, cloudDetail: cloudDetail,
+                                      moonAltitude: moonAlt, moonIllumination: illumination, moon: moon,
+                                      skyFactor: skyFactor, light: light, score: score))
         }
         return result
     }

@@ -100,12 +100,31 @@ export async function fetchSolarWind() {
 
 // MARK: Open-Meteo 云量预报，一次请求查多个坐标，结果顺序和输入一致
 
+/**
+ * 一起查的几个天气模型：当地最优（北欧是 MET Nordic）、欧洲中心、德国、美国。
+ * 云量预报在模型之间常常差很多，只信一个容易整晚误判，取平均更稳
+ */
+export const CLOUD_MODELS = [
+  { id: 'best_match', label: '当地模型' },
+  { id: 'ecmwf_ifs025', label: 'ECMWF' },
+  { id: 'icon_seamless', label: 'ICON' },
+  { id: 'gfs_seamless', label: 'GFS' },
+];
+
+/** 有效云量：低云不透光按原值，中云按 9 成，高云（薄卷云，亮的极光能透过来）按 4 成，各层随机重叠 */
+export function effectiveCloud(low, mid, high) {
+  return 100 * (1 - (1 - low / 100) * (1 - (0.9 * mid) / 100) * (1 - (0.4 * high) / 100));
+}
+
+const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
+
 export async function fetchClouds(coordinates) {
   if (!coordinates.length) return [];
   const params = new URLSearchParams({
     latitude: coordinates.map((c) => c[0].toFixed(3)).join(','),
     longitude: coordinates.map((c) => c[1].toFixed(3)).join(','),
     hourly: 'cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high',
+    models: CLOUD_MODELS.map((m) => m.id).join(','),
     timezone: 'auto',
     timeformat: 'unixtime',
     past_days: '1',
@@ -118,13 +137,25 @@ export async function fetchClouds(coordinates) {
     const h = raw.hourly;
     const hours = [];
     h.time.forEach((t, j) => {
-      if (h.cloud_cover[j] == null) return;
+      const models = [];
+      for (const { id, label } of CLOUD_MODELS) {
+        const total = h[`cloud_cover_${id}`]?.[j];
+        if (total == null) continue;
+        const low = h[`cloud_cover_low_${id}`]?.[j], mid = h[`cloud_cover_mid_${id}`]?.[j], high = h[`cloud_cover_high_${id}`]?.[j];
+        // 有的模型不分层，就只能用总云量
+        const layered = low != null && mid != null && high != null;
+        models.push({ id, label, total, low: low ?? 0, mid: mid ?? 0, high: high ?? 0,
+          effective: layered ? effectiveCloud(low, mid, high) : total });
+      }
+      if (!models.length) return;
       hours.push({
         time: t * 1000,
-        total: h.cloud_cover[j],
-        low: h.cloud_cover_low[j] ?? 0,
-        mid: h.cloud_cover_mid[j] ?? 0,
-        high: h.cloud_cover_high[j] ?? 0,
+        total: mean(models.map((m) => m.total)),
+        low: mean(models.map((m) => m.low)),
+        mid: mean(models.map((m) => m.mid)),
+        high: mean(models.map((m) => m.high)),
+        effective: mean(models.map((m) => m.effective)),
+        models,
       });
     });
     return { timeZone: raw.timezone, latitude: coordinates[i][0], longitude: coordinates[i][1], elevation: raw.elevation, hours };

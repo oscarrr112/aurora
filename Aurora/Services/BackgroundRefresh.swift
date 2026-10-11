@@ -30,8 +30,8 @@ enum BackgroundRefresh {
         var body = "视野内极光概率 \(visible)%"
         if let clouds = try? await WeatherClient.fetchClouds(latitude: lat, longitude: lon),
            let hour = clouds.hour(near: now) {
-            guard hour.total < 85 else { return }
-            body += "，云量 \(Int(hour.total))%"
+            guard hour.effective < 85 else { return }
+            body += "，云量 \(Int(hour.effective))%"
         }
 
         await notify(title: "极光来了，出门看看！", body: body)

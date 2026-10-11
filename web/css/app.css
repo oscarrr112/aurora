@@ -519,3 +519,22 @@ body.map-expanded { overflow: hidden; }
   font-size: 11px;
   font-weight: 800;
 }
+
+/* MARK: 评分拆解 */
+.breakdown .formula { margin: -6px 0 12px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.factors { display: flex; flex-direction: column; gap: 12px; }
+.factor-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; }
+.factor-head em { font-style: normal; font-size: 11px; font-weight: 700; color: #000; background: var(--orange); border-radius: 99px; padding: 1px 7px; margin-left: 4px; }
+.factor-head b { font-variant-numeric: tabular-nums; }
+.factor-bar { height: 5px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); margin: 5px 0 4px; overflow: hidden; }
+.factor-bar span { display: block; height: 100%; border-radius: 99px; }
+.factor-text { font-size: 12px; color: var(--dim); line-height: 1.5; }
+.factor-text .chip { font-size: 10px; padding: 0 5px; }
+.factor-models { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; font-size: 11px; color: var(--faint); }
+.factor-models b { color: var(--dim); font-weight: 600; }
+.factor.main .factor-head span { font-weight: 700; }
+.factor-notes { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); font-size: 13px; }
+.factor-notes p { margin: 0 0 6px; }
+.factor-notes p:last-child { margin-bottom: 0; }
+.factor-notes b { color: var(--aurora); }
+.factor-head em.also { background: rgba(255, 214, 10, 0.85); }

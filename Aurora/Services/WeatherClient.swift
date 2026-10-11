@@ -2,19 +2,23 @@ import Foundation
 
 /// Open-Meteo 云量预报（免费、无需 Key）
 enum WeatherClient {
-    private struct Raw: Decodable {
-        struct Hourly: Decodable {
-            let time: [Double]
-            let cloud_cover: [Double?]
-            let cloud_cover_low: [Double?]
-            let cloud_cover_mid: [Double?]
-            let cloud_cover_high: [Double?]
-        }
+    /// 一起查的几个天气模型：当地最优（北欧是 MET Nordic）、欧洲中心、德国、美国。
+    /// 云量预报在模型之间常常差很多，只信一个容易整晚误判，取平均更稳
+    static let models: [(id: String, label: String)] = [
+        ("best_match", "当地模型"), ("ecmwf_ifs025", "ECMWF"), ("icon_seamless", "ICON"), ("gfs_seamless", "GFS"),
+    ]
 
+    /// 有效云量：低云不透光按原值，中云按 9 成，高云（薄卷云，亮的极光能透过来）按 4 成，各层随机重叠
+    static func effectiveCloud(low: Double, mid: Double, high: Double) -> Double {
+        100 * (1 - (1 - low / 100) * (1 - 0.9 * mid / 100) * (1 - 0.4 * high / 100))
+    }
+
+    private struct Raw: Decodable {
         let timezone: String?
         let utc_offset_seconds: Int?
         let elevation: Double?
-        let hourly: Hourly
+        /// 键是 time 和 cloud_cover_low_ecmwf_ifs025 这种「变量_模型」
+        let hourly: [String: [Double?]]
     }
 
     static func fetchClouds(latitude: Double, longitude: Double) async throws -> CloudForecast {
@@ -30,6 +34,7 @@ enum WeatherClient {
             URLQueryItem(name: "latitude", value: coordinates.map { String(format: "%.3f", $0.latitude) }.joined(separator: ",")),
             URLQueryItem(name: "longitude", value: coordinates.map { String(format: "%.3f", $0.longitude) }.joined(separator: ",")),
             URLQueryItem(name: "hourly", value: "cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high"),
+            URLQueryItem(name: "models", value: models.map(\.id).joined(separator: ",")),
             URLQueryItem(name: "timezone", value: "auto"),
             URLQueryItem(name: "timeformat", value: "unixtime"),
             URLQueryItem(name: "past_days", value: "1"),
@@ -64,15 +69,35 @@ enum WeatherClient {
 
     private static func forecast(from raw: Raw, latitude: Double, longitude: Double) -> CloudForecast {
         let h = raw.hourly
+        func value(_ key: String, _ i: Int) -> Double? { (h[key]?[safe: i]) ?? nil }
+        func mean(_ values: [Double]) -> Double { values.reduce(0, +) / Double(values.count) }
+
         var hours: [CloudForecast.Hour] = []
-        for i in h.time.indices {
-            guard let total = h.cloud_cover[safe: i] ?? nil else { continue }
+        for (i, time) in (h["time"] ?? []).enumerated() {
+            guard let time else { continue }
+            let clouds: [CloudForecast.ModelCloud] = models.compactMap { model in
+                guard let total = value("cloud_cover_\(model.id)", i) else { return nil }
+                let low = value("cloud_cover_low_\(model.id)", i)
+                let mid = value("cloud_cover_mid_\(model.id)", i)
+                let high = value("cloud_cover_high_\(model.id)", i)
+                // 有的模型不分层，就只能用总云量
+                let effective = if let low, let mid, let high {
+                    effectiveCloud(low: low, mid: mid, high: high)
+                } else {
+                    total
+                }
+                return .init(id: model.id, label: model.label, total: total,
+                             low: low ?? 0, mid: mid ?? 0, high: high ?? 0, effective: effective)
+            }
+            guard !clouds.isEmpty else { continue }
             hours.append(.init(
-                time: Date(timeIntervalSince1970: h.time[i]),
-                total: total,
-                low: (h.cloud_cover_low[safe: i] ?? nil) ?? 0,
-                mid: (h.cloud_cover_mid[safe: i] ?? nil) ?? 0,
-                high: (h.cloud_cover_high[safe: i] ?? nil) ?? 0
+                time: Date(timeIntervalSince1970: time),
+                total: mean(clouds.map(\.total)),
+                low: mean(clouds.map(\.low)),
+                mid: mean(clouds.map(\.mid)),
+                high: mean(clouds.map(\.high)),
+                effective: mean(clouds.map(\.effective)),
+                models: clouds
             ))
         }
         let timeZone = raw.timezone.flatMap(TimeZone.init(identifier:))

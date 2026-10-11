@@ -43,7 +43,7 @@ export function tonightView() {
   const need = kpNeeded(mlat);
   const here = hours.reduce((m, h) => Math.max(m, h.score), 0);
 
-  return errorBanner() + nowCard(place, now, tz) + tonightSummary(place, hours, mlat, need, now, tz) + nearbyHint(here)
+  return errorBanner() + nowCard(place, now, tz) + tonightSummary(place, hours, mlat, need, now, tz) + breakdownCard(hours, tz) + nearbyHint(here)
     + (hours.length ? hourlyCard(hours, need, tz) : '') + kpCard(need, tz)
     + (state.lastUpdated ? `<p class="footnote">更新于 ${fmt.time(state.lastUpdated)} · 时间均为${tz ? '当地' : '本地'}时间</p>` : '');
 }
@@ -51,7 +51,7 @@ export function tonightView() {
 function nowCard(place, now, tz) {
   if (!state.ovation) return card('现在', spinner());
   const sun = sunAltitude(now, place.latitude, place.longitude);
-  const cloud = cloudNear(state.clouds, now)?.total;
+  const cloud = cloudNear(state.clouds, now)?.effective;
   const cast = nowcast(state.ovation, place.latitude, place.longitude);
   let verdict;
   if (sun > -6) verdict = '天还亮着，等天黑再说';
@@ -101,6 +101,97 @@ function tonightSummary(place, hours, mlat, need, now, tz) {
   }
   return card('今晚', `<div class="rows">${rows.join('')}</div>
     <p class="note">磁纬约 ${Math.abs(mlat).toFixed(1)}°。门槛是粗略估算，实际以「现在」的概率为准。</p>`);
+}
+
+// MARK: 评分拆解
+
+/** 一小时的评分拆成五个相乘的因素，每个 0–100% */
+function factors(h) {
+  const list = [];
+
+  list.push({ key: 'aurora', icon: '⚡️', label: '极光强度', value: h.auroraChance,
+    text: h.kp == null ? '还没有这个时段的 Kp 预报'
+      : h.auroraChance <= 0 ? `预计 Kp ${fmt.kp(h.kp)}，这里要 Kp ${fmt.kp(h.kpHorizon)} 才能在低空看到`
+        : `预计 Kp ${fmt.kp(h.kp)}，这里要 ${fmt.kp(h.kpHorizon)}` });
+
+  list.push({ key: 'dark', icon: '🌙', label: '天黑', value: h.darkness,
+    text: h.darkness >= 1 ? '全黑' : `太阳在地平线下 ${Math.round(-h.sunAltitude)}°，还没全黑` });
+
+  const c = h.cloudDetail;
+  let cloudText = '没有云量数据，按晴天算';
+  if (c) {
+    cloudText = `低云 ${Math.round(c.low)}% · 中云 ${Math.round(c.mid)}% · 高云 ${Math.round(c.high)}%（高云薄，打折算）`;
+  }
+  list.push({ key: 'clear', icon: '☁️', label: '晴朗', value: 1 - (h.cloud ?? 0) / 100, text: cloudText,
+    models: c?.models?.length > 1 ? c.models : null });
+
+  list.push({ key: 'moon', icon: '🌗', label: '月光', value: h.moon,
+    text: h.moonAltitude <= 0 ? '月亮在地平线下' : `月亮 ${Math.round(h.moonIllumination * 100)}% 亮，高 ${Math.round(h.moonAltitude)}°` });
+
+  const sky = state.placeSky, horizon = state.placeHorizon;
+  let lightText = h.light >= 0.995 ? '几乎没有光害' : '光害';
+  if (sky) {
+    lightText = `头顶 ${zoneChip(sky)}${horizon ? ` · ${compass(horizon.bearing)}方地平线 ${zoneChip(horizon.glow)}` : ''} ${e(sky.summary)}`;
+  }
+  if (h.light > h.skyFactor + 0.005) lightText += '，极光强时影响小一些';
+  list.push({ key: 'light', icon: '💡', label: '光害', value: h.light, text: lightText, html: true });
+  return list;
+}
+
+const FACTOR_NAMES = { aurora: '极光不够强', dark: '天不够黑', clear: '云', moon: '月光', light: '光害' };
+
+function breakdownCard(hours, tz) {
+  const best = bestHour(hours);
+  if (!best || best.kp == null) return '';
+  const list = factors(best);
+  const main = list.reduce((m, f) => (f.value < m.value ? f : m));
+  const score = Math.floor(best.score);
+  const pct = (v) => `${Math.round(v * 100)}%`;
+
+  const title = score < 40 ? `为什么只有 ${score} 分` : `${score} 分怎么来的`;
+  const formula = `${fmt.time(best.time, tz)} 最好 · 下面几项相乘`;
+
+  const rows = list.map((f) => {
+    const isMain = f === main && f.value < 0.9;
+    // 和主要原因差不多的也标出来，免得以为只有一项在扣分
+    const isAlso = !isMain && f.value < 0.8 && f.value - main.value < 0.1;
+    const color = f.value >= 0.8 ? 'var(--aurora)' : f.value >= 0.5 ? 'var(--yellow)' : 'var(--orange)';
+    const models = f.models ? `<div class="factor-models">${f.models.map((m) =>
+      `<span>${e(m.label)} <b>${Math.round(m.effective)}%</b></span>`).join('')}</div>` : '';
+    return `<div class="factor${isMain ? ' main' : ''}">
+      <div class="factor-head"><span>${f.icon} ${f.label}${isMain ? ' <em>主要原因</em>' : isAlso ? ' <em class="also">也在扣分</em>' : ''}</span><b style="color:${color}">${pct(f.value)}</b></div>
+      <div class="factor-bar"><span style="width:${Math.max(f.value * 100, 1.5)}%;background:${color}"></span></div>
+      <div class="factor-text">${f.html ? f.text : e(f.text)}</div>${models}</div>`;
+  }).join('');
+
+  // 几句结论：去掉主要原因能到多少分、模型分歧、整晚的情况
+  const notes = [];
+  const clear = list.find((f) => f.key === 'clear');
+  const light = list.find((f) => f.key === 'light');
+  if (clear.value < 0.8 && clear.value > 0) notes.push(`要是天晴，这个时段能到 <b>${Math.floor(best.score / clear.value)}</b> 分。`);
+  if (clear.models) {
+    const values = clear.models.map((m) => m.effective);
+    if (Math.max(...values) - Math.min(...values) >= 40) {
+      notes.push(`${clear.models.length} 个天气模型的云量差了 ${Math.round(Math.max(...values) - Math.min(...values))}%，分歧很大，评分按平均算。出门前看一眼窗外或卫星云图。`);
+    }
+  }
+  if (light.value < 0.85) notes.push(`去没有光害的地方能到 <b>${Math.floor(best.score / light.value)}</b> 分，见「去哪看」。`);
+  const aurora = list.find((f) => f.key === 'aurora');
+  if (aurora.value < 0.5) {
+    const maxKp = hours.reduce((m, h) => Math.max(m, h.kp ?? 0), 0);
+    notes.push(`这里要 Kp ${fmt.kp(best.kpHorizon)} 才能在低空看到，今晚预报最高只有 ${fmt.kp(maxKp)}。`);
+  }
+  // 整晚每个小时卡在哪个因素上
+  const counts = {};
+  for (const h of hours) {
+    const worst = factors(h).reduce((m, f) => (f.value < m.value ? f : m));
+    if (worst.value < 0.6) counts[worst.key] = (counts[worst.key] ?? 0) + 1;
+  }
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  if (top && top[1] >= hours.length / 2) notes.push(`整晚 ${hours.length} 个小时里，有 ${top[1]} 个小时主要卡在${FACTOR_NAMES[top[0]]}上。`);
+
+  return card(title, `<p class="formula">${e(formula)}</p><div class="factors">${rows}</div>
+    ${notes.length ? `<div class="factor-notes">${notes.map((n) => `<p>${n}</p>`).join('')}</div>` : ''}`, 'breakdown');
 }
 
 function nearbyHint(here) {
