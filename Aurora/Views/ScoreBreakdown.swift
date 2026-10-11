@@ -18,8 +18,7 @@ struct ScoreBreakdown: View {
 
     var body: some View {
         if let best = hours.max(by: { $0.score < $1.score }), best.kp != nil {
-            let score = Int(best.score)
-            Card(title: score < 40 ? "为什么只有 \(score) 分" : "\(score) 分怎么来的") {
+            Card(title: "评分构成") {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(factors(best)) { row($0) }
                 }

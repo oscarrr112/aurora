@@ -141,7 +141,6 @@ function factors(h) {
 function breakdownCard(hours) {
   const best = bestHour(hours);
   if (!best || best.kp == null) return '';
-  const score = Math.floor(best.score);
   const rows = factors(best).map((f) => {
     const color = f.value >= 0.8 ? 'var(--aurora)' : f.value >= 0.5 ? 'var(--yellow)' : 'var(--orange)';
     const models = f.models ? `<div class="factor-models">${f.models.map((m) =>
@@ -151,7 +150,7 @@ function breakdownCard(hours) {
       <div class="factor-bar"><span style="width:${Math.max(f.value * 100, 1.5)}%;background:${color}"></span></div>
       <div class="factor-text">${f.html ? f.text : e(f.text)}</div>${models}</div>`;
   }).join('');
-  return card(score < 40 ? `为什么只有 ${score} 分` : `${score} 分怎么来的`, `<div class="factors">${rows}</div>`, 'breakdown');
+  return card('评分构成', `<div class="factors">${rows}</div>`, 'breakdown');
 }
 
 function nearbyHint(here) {
