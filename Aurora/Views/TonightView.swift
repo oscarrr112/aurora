@@ -39,7 +39,7 @@ struct TonightView: View {
 
         NowCard(place: place, now: now, tz: tz)
         TonightSummary(place: place, hours: hours, mlat: mlat, now: now, tz: tz)
-        ScoreBreakdown(hours: hours, tz: tz)
+        ScoreBreakdown(hours: hours)
         NearbyHint(here: hours.map(\.score).max() ?? 0)
         if !hours.isEmpty {
             HourlyCard(hours: hours, need: Geomag.kpNeeded(magneticLatitude: mlat), tz: tz)
